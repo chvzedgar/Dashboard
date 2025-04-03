@@ -12,9 +12,24 @@ st.sidebar.header("Options")
 uploaded_files = st.sidebar.file_uploader("Upload Excel files", type=["xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
+    # Let user select a common column to merge on
+    common_columns = [col for col in pd.read_excel(uploaded_files[0]).columns if all(col in pd.read_excel(f).columns for f in uploaded_files)]
+    merge_column = st.sidebar.selectbox("Select common column to merge on", ["None"] + common_columns) if common_columns else "None"
+
     # Combine all uploaded files into one DataFrame
-    all_dfs = [pd.read_excel(file) for file in uploaded_files]
-    df = pd.concat(all_dfs, ignore_index=True)
+    if merge_column == "None":
+        all_dfs = [pd.read_excel(file) for file in uploaded_files]
+        df = pd.concat(all_dfs, ignore_index=True)
+    else:
+        # Merge files based on the common column
+        base_df = pd.read_excel(uploaded_files[0])
+        df = base_df.copy()
+        for file in uploaded_files[1:]:
+            df = df.merge(pd.read_excel(file), on=merge_column, how="outer", suffixes=("", "_dup"))
+
+        # Remove duplicate columns (e.g., if suffixes were added)
+        df = df.loc[:, ~df.columns.str.endswith("_dup")]
+
     st.write("Preview of your combined data:")
     st.dataframe(df)
 
@@ -41,7 +56,11 @@ if uploaded_files:
             chart_type = st.sidebar.selectbox(f"Choose chart type (Chart {i + 1})", ["Bar", "Line", "Scatter", "Pie"], key=f"chart_{i}")
 
             # Group data based on selected columns and aggregation
-            grouped_data = df.groupby(col1)[col2].agg(agg_type).reset_index()
+            try:
+                grouped_data = df.groupby(col1)[col2].agg(agg_type).reset_index()
+            except Exception as e:
+                st.error(f"Error processing Chart {i + 1}: {str(e)}. Please check column types or selections.")
+                continue
 
             # Error handling: Check if the second column is numeric for Pie charts
             if chart_type == "Pie" and not pd.api.types.is_numeric_dtype(grouped_data[col2]):
