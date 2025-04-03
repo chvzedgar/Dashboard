@@ -12,21 +12,30 @@ st.sidebar.header("Options")
 uploaded_files = st.sidebar.file_uploader("Upload Excel files", type=["xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
-    # Let user select a common column to merge on
-    common_columns = [col for col in pd.read_excel(uploaded_files[0]).columns if all(col in pd.read_excel(f).columns for f in uploaded_files)]
-    merge_column = st.sidebar.selectbox("Select common column to merge on", ["None"] + common_columns) if common_columns else "None"
+    # Detect common columns across all files
+    first_df = pd.read_excel(uploaded_files[0])
+    common_columns = [col for col in first_df.columns if all(col in pd.read_excel(f).columns for f in uploaded_files[1:])]
+    
+    # Relationship management section
+    st.sidebar.subheader("Manage Relationships")
+    if not common_columns:
+        st.sidebar.warning("No common columns found across all files. Data will be stacked.")
+        merge_columns = []
+        merge_type = "outer"
+    else:
+        merge_columns = st.sidebar.multiselect("Select columns to merge on", common_columns, default=[common_columns[0]] if common_columns else [])
+        merge_type = st.sidebar.selectbox("Merge type", ["outer", "inner", "left"], index=0)
 
     # Combine all uploaded files into one DataFrame
-    if merge_column == "None":
+    if not merge_columns:
         all_dfs = [pd.read_excel(file) for file in uploaded_files]
         df = pd.concat(all_dfs, ignore_index=True)
     else:
-        # Merge files based on the common column
         base_df = pd.read_excel(uploaded_files[0])
         df = base_df.copy()
         for file in uploaded_files[1:]:
-            df = df.merge(pd.read_excel(file), on=merge_column, how="outer", suffixes=("", "_dup"))
-
+            df = df.merge(pd.read_excel(file), on=merge_columns, how=merge_type, suffixes=("", "_dup"))
+        
         # Remove duplicate columns (e.g., if suffixes were added)
         df = df.loc[:, ~df.columns.str.endswith("_dup")]
 
